@@ -669,14 +669,9 @@ function resolveServiceStatus(
   status: ChecklyStatus | undefined,
   results: ChecklyResult[],
 ): SystemStatus {
-  const latestIssueGroup = groupIssueResults(results).at(-1);
-  const latestIssueSeverity = latestIssueGroup
-    ? resolveIncidentSeverity(latestIssueGroup)
-    : null;
-
   if (status) {
     if (status.hasFailures || status.hasErrors) {
-      return latestIssueSeverity ?? "operational";
+      return "outage";
     }
 
     if (status.isDegraded) {
@@ -696,7 +691,7 @@ function resolveServiceStatus(
   }
 
   if (latestResult.hasFailures || latestResult.hasErrors) {
-    return latestIssueSeverity ?? "operational";
+    return "outage";
   }
 
   if (latestResult.isDegraded || latestResult.overMaxResponseTime) {
