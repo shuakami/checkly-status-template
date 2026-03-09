@@ -899,7 +899,7 @@ export function StatusPageClient({ initialData }: { initialData: StatusPageData 
               event.preventDefault();
               setCurrentPage("home");
             }}
-            className="block"
+            className="block h-7 w-7 overflow-hidden rounded-full"
           >
             <Image
               src={siteConfig.brand.logoPath}
@@ -907,7 +907,7 @@ export function StatusPageClient({ initialData }: { initialData: StatusPageData 
               width={28}
               height={28}
               priority
-              className="h-7 w-auto"
+              className="h-full w-full object-cover"
             />
           </a>
           <div className="flex items-center gap-4">

@@ -12,6 +12,11 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: siteConfig.brand.siteName,
   description: siteConfig.brand.description,
+  icons: {
+    icon: [{ url: "/icon", type: "image/png", sizes: "64x64" }],
+    shortcut: [{ url: "/icon", type: "image/png", sizes: "64x64" }],
+    apple: [{ url: "/icon", type: "image/png", sizes: "64x64" }],
+  },
 };
 
 export default function RootLayout({
