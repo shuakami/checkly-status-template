@@ -4,6 +4,8 @@ import { getStatusPageDataSafe } from "@/lib/checkly";
 import { siteConfig } from "@/lib/site-config";
 import { buildStatusIconBuffer } from "@/lib/status-icon";
 
+export const maxDuration = 30;
+
 export async function GET() {
   await connection();
   const data = await getStatusPageDataSafe();

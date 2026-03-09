@@ -2,6 +2,8 @@ import { connection } from "next/server";
 import { getStatusPageDataSafe } from "@/lib/checkly";
 import { siteConfig } from "@/lib/site-config";
 
+export const maxDuration = 30;
+
 export async function GET(request: Request) {
   await connection();
   void request.url;

@@ -1,6 +1,10 @@
 # Checkly Status Template
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/shuakami/checkly-status-template&env=CHECKLY_API_KEY,CHECKLY_ACCOUNT_ID&envDescription=Checkly%20API%20credentials%20for%20your%20status%20page&project-name=checkly-status-template)
+
 A production-ready Next.js status page template for teams that already use Checkly and want a polished public status site without rebuilding the basics.
+
+![Checkly Status Template preview](docs/preview.png)
 
 ## Why This Template
 
@@ -10,6 +14,7 @@ A production-ready Next.js status page template for teams that already use Check
 - Keeps outage history opinionated but configurable so short-lived noise does not overwhelm the page
 - Centralizes branding, thresholds, time zone settings, and link-visibility rules in one typed config file
 - Falls back to a friendly maintenance notice when Checkly env vars are missing or the upstream API is temporarily unavailable
+- Ships with a default `vercel.json` that raises App Router function timeouts to 30 seconds
 
 ## Quick Start
 
@@ -26,7 +31,7 @@ npm install
 cp .env.example .env.local
 ```
 
-4. Fill in your Checkly credentials in `.env.local`.
+4. Create a Checkly API key at [Checkly User API Keys](https://app.checklyhq.com/settings/user/api-keys), then fill in your Checkly credentials in `.env.local`.
 
 ```env
 CHECKLY_API_KEY="cu_your_checkly_api_key"
@@ -34,7 +39,7 @@ CHECKLY_ACCOUNT_ID="your-checkly-account-id"
 ```
 
 5. Open `lib/site-config.ts` and update the brand, website URL, time zone, thresholds, and optional service overrides.
-6. Replace `public/logo.svg` with your own logo if you do not want the default mark.
+6. Replace the logo asset in `public/` if you do not want the default mark.
 7. Start the development server.
 
 ```bash
@@ -89,11 +94,13 @@ to keep those cards visible while suppressing the outbound link icon.
 
 This template works well on Vercel, Fly.io, Render, or any Node host that can run `next start`.
 
-### Recommended
+### Vercel
 
-- keep `CHECKLY_API_KEY` and `CHECKLY_ACCOUNT_ID` in your platform secrets
-- leave `cacheComponents` enabled
-- deploy from the default branch after `npm run validate`
+- Use the deploy button at the top of this README for a one-click setup
+- Add `CHECKLY_API_KEY` and `CHECKLY_ACCOUNT_ID` in your Vercel project environment variables
+- `CHECKLY_API_KEY` can be created from [Checkly User API Keys](https://app.checklyhq.com/settings/user/api-keys)
+- The included `vercel.json` raises the default App Router function timeout to 30 seconds
+- Keep `cacheComponents` enabled and deploy after `npm run validate`
 
 ## How It Works
 

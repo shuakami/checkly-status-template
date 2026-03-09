@@ -3,6 +3,8 @@ import { getStatusPageDataSafe } from "@/lib/checkly";
 import { siteConfig } from "@/lib/site-config";
 import { shouldShowIncidentInHistory } from "@/lib/status-page-rules";
 
+export const maxDuration = 30;
+
 function escapeXml(value: string) {
   return value
     .replaceAll("&", "&amp;")
