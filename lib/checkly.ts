@@ -1006,16 +1006,7 @@ function buildFallbackStatusPageData(error: unknown, today = getFallbackReferenc
   };
 }
 
-export async function getStatusPageData(): Promise<StatusPageData> {
-  "use cache";
-
-  cacheLife({
-    stale: siteConfig.monitoring.cache.staleSeconds,
-    revalidate: siteConfig.monitoring.cache.revalidateSeconds,
-    expire: siteConfig.monitoring.cache.expireSeconds,
-  });
-  cacheTag(CHECKLY_CACHE_TAG, "checkly-incidents");
-
+async function loadStatusPageData(): Promise<StatusPageData> {
   const today = new Date();
   const historyWindowStart = new Date(today.getTime() - HISTORY_LOOKBACK_DAYS * DAY_IN_MS);
   const [checks, statuses] = await Promise.all([fetchChecks(), fetchCheckStatuses()]);
@@ -1069,6 +1060,15 @@ export async function getStatusPageData(): Promise<StatusPageData> {
 }
 
 export async function getStatusPageDataSafe(): Promise<StatusPageData> {
+  "use cache";
+
+  cacheLife({
+    stale: siteConfig.monitoring.cache.staleSeconds,
+    revalidate: siteConfig.monitoring.cache.revalidateSeconds,
+    expire: siteConfig.monitoring.cache.expireSeconds,
+  });
+  cacheTag(CHECKLY_CACHE_TAG, "checkly-incidents");
+
   const missingEnvironmentVariableError = getMissingEnvironmentVariableError();
 
   if (missingEnvironmentVariableError) {
@@ -1081,7 +1081,7 @@ export async function getStatusPageDataSafe(): Promise<StatusPageData> {
 
   inflightStatusPageDataPromise = (async () => {
     try {
-      const data = await getStatusPageData();
+      const data = await loadStatusPageData();
       lastSuccessfulStatusPageData = data;
 
       return data;
