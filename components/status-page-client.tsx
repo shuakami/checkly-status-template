@@ -18,6 +18,7 @@ import type {
   IncidentSegment,
   IncidentSummary,
   IncidentTimelineItem,
+  LiveStatusPageData,
   StatusPageLoadError,
   ServiceStatusCard,
   StatusPageData,
@@ -259,14 +260,37 @@ function buildRangeOptions(services: ServiceStatusCard[]) {
   });
 }
 
-function isSameStatusSnapshot(currentData: StatusPageData, nextData: StatusPageData) {
-  return (
-    currentData.generatedAt === nextData.generatedAt &&
-    currentData.systemStatus === nextData.systemStatus &&
-    currentData.services.length === nextData.services.length &&
-    currentData.incidents.length === nextData.incidents.length &&
-    currentData.loadError?.code === nextData.loadError?.code
+function hasSameLiveStatus(currentData: StatusPageData, liveData: LiveStatusPageData) {
+  if (currentData.systemStatus !== liveData.systemStatus) {
+    return false;
+  }
+
+  const liveStatusesByServiceId = new Map(
+    liveData.services.map((service) => [service.id, service.status]),
   );
+
+  return currentData.services.every(
+    (service) =>
+      (liveStatusesByServiceId.get(service.id) ?? service.status) === service.status,
+  );
+}
+
+function mergeLiveStatusIntoSnapshot(
+  currentData: StatusPageData,
+  liveData: LiveStatusPageData,
+): StatusPageData {
+  const liveStatusesByServiceId = new Map(
+    liveData.services.map((service) => [service.id, service.status]),
+  );
+
+  return {
+    ...currentData,
+    systemStatus: liveData.systemStatus,
+    services: currentData.services.map((service) => ({
+      ...service,
+      status: liveStatusesByServiceId.get(service.id) ?? service.status,
+    })),
+  };
 }
 
 function getTooltipLayoutKey(day: UptimeDay) {
@@ -876,19 +900,26 @@ export function StatusPageClient({ initialData }: { initialData: StatusPageData 
   const canGoPreviousRange = selectedRangeIndex > 0;
   const canGoNextRange = selectedRangeIndex < rangeOptions.length - 1;
 
-  const refreshStatusPageData = useEffectEvent(async () => {
+  const refreshLiveStatus = useEffectEvent(async () => {
     try {
-      const response = await fetch("/api/status", {
+      const response = await fetch("/api/status/live", {
         cache: "no-store",
         headers: {
           Accept: "application/json",
         },
       });
-      const nextData = (await response.json()) as StatusPageData;
+
+      if (!response.ok) {
+        return;
+      }
+
+      const liveData = (await response.json()) as LiveStatusPageData;
 
       startTransition(() => {
         setData((currentData) =>
-          isSameStatusSnapshot(currentData, nextData) ? currentData : nextData,
+          hasSameLiveStatus(currentData, liveData)
+            ? currentData
+            : mergeLiveStatusIntoSnapshot(currentData, liveData),
         );
       });
     } catch {
@@ -907,11 +938,13 @@ export function StatusPageClient({ initialData }: { initialData: StatusPageData 
       isRefreshInFlight = true;
 
       try {
-        await refreshStatusPageData();
+        await refreshLiveStatus();
       } finally {
         isRefreshInFlight = false;
       }
     };
+
+    void refreshIfVisible();
 
     const intervalId = window.setInterval(() => {
       void refreshIfVisible();
@@ -935,7 +968,7 @@ export function StatusPageClient({ initialData }: { initialData: StatusPageData 
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("online", handleOnline);
     };
-  }, [refreshStatusPageData]);
+  }, [refreshLiveStatus]);
 
   useEffect(() => {
     if (selectedRangeIndex < rangeOptions.length) {

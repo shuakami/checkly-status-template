@@ -4,6 +4,8 @@ import type {
   IncidentSegment,
   IncidentSummary,
   IncidentTimelineItem,
+  LiveServiceStatusSnapshot,
+  LiveStatusPageData,
   ServiceStatusCard,
   StatusPageData,
   StatusPageLoadError,
@@ -26,6 +28,8 @@ const CHECK_RESULTS_PAGE_LIMIT = 100;
 const MAX_OUTAGE_HISTORY_PAGES = 50;
 const MAX_RETRY_ATTEMPTS = 4;
 const CHECKLY_REQUEST_TIMEOUT_MS = 8_000;
+const LIVE_STATUS_CACHE_SECONDS = 15;
+const LIVE_STATUS_MEMORY_TTL_MS = LIVE_STATUS_CACHE_SECONDS * 1000;
 const DISPLAY_LOCALE = siteConfig.locale;
 const DISPLAY_TIME_ZONE = siteConfig.monitoring.timeZone;
 const DISPLAY_TIME_ZONE_LABEL = siteConfig.monitoring.timeZoneLabel;
@@ -121,6 +125,9 @@ interface DailyIncidentAggregate {
 
 let lastSuccessfulStatusPageData: StatusPageData | null = null;
 let inflightStatusPageDataPromise: Promise<StatusPageData> | null = null;
+let lastSuccessfulLiveStatusData: LiveStatusPageData | null = null;
+let inflightLiveStatusDataPromise: Promise<LiveStatusPageData> | null = null;
+let lastLiveStatusResolvedAt = 0;
 
 function isMissingEnvironmentVariableError(error: unknown) {
   return error instanceof Error && error.message.startsWith("Missing environment variable:");
@@ -217,9 +224,12 @@ function buildHeaders() {
   };
 }
 
-async function fetchChecklyJson<T>(
+async function fetchChecklyJsonInternal<T>(
   path: string,
   searchParams?: Record<string, string | number | undefined>,
+  options?: {
+    preferFresh?: boolean;
+  },
 ): Promise<T> {
   for (let attempt = 0; attempt < MAX_RETRY_ATTEMPTS; attempt += 1) {
     const url = new URL(path, CHECKLY_API_BASE_URL);
@@ -233,13 +243,17 @@ async function fetchChecklyJson<T>(
     }
 
     const response = await fetch(url, {
-      cache: "force-cache",
+      cache: options?.preferFresh ? "no-store" : "force-cache",
       headers: buildHeaders(),
       signal: AbortSignal.timeout(CHECKLY_REQUEST_TIMEOUT_MS),
-      next: {
-        revalidate: siteConfig.monitoring.cache.revalidateSeconds,
-        tags: [CHECKLY_CACHE_TAG],
-      },
+      ...(options?.preferFresh
+        ? {}
+        : {
+            next: {
+              revalidate: siteConfig.monitoring.cache.revalidateSeconds,
+              tags: [CHECKLY_CACHE_TAG],
+            },
+          }),
     });
 
     if (response.ok) {
@@ -264,6 +278,20 @@ async function fetchChecklyJson<T>(
   }
 
   throw new Error("Checkly request failed after retrying.");
+}
+
+async function fetchChecklyJson<T>(
+  path: string,
+  searchParams?: Record<string, string | number | undefined>,
+): Promise<T> {
+  return fetchChecklyJsonInternal<T>(path, searchParams);
+}
+
+async function fetchChecklyJsonFresh<T>(
+  path: string,
+  searchParams?: Record<string, string | number | undefined>,
+): Promise<T> {
+  return fetchChecklyJsonInternal<T>(path, searchParams, { preferFresh: true });
 }
 
 async function fetchChecks() {
@@ -301,9 +329,30 @@ async function fetchCheckStatuses() {
   }
 }
 
+async function fetchCheckStatusesFresh() {
+  try {
+    return await fetchChecklyJsonFresh<ChecklyStatus[]>("/v1/check-statuses");
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("Checkly request failed (404)")) {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
 async function fetchRecentCheckResults(checkId: string) {
   const page = await fetchChecklyJson<ChecklyResultsPage>(`/v2/check-results/${checkId}`, {
     limit: CHECK_RESULTS_PAGE_LIMIT,
+    resultType: "FINAL",
+  });
+
+  return page.entries ?? [];
+}
+
+async function fetchRecentCheckResultsFresh(checkId: string) {
+  const page = await fetchChecklyJsonFresh<ChecklyResultsPage>(`/v2/check-results/${checkId}`, {
+    limit: 1,
     resultType: "FINAL",
   });
 
@@ -701,6 +750,37 @@ function resolveServiceStatus(
   return "operational";
 }
 
+function resolveLiveServiceStatus(
+  status: ChecklyStatus | undefined,
+  latestResult?: ChecklyResult,
+): SystemStatus {
+  if (status) {
+    if (status.hasFailures || status.hasErrors) {
+      return "outage";
+    }
+
+    if (status.isDegraded) {
+      return "degraded";
+    }
+
+    return "operational";
+  }
+
+  if (!latestResult) {
+    return "operational";
+  }
+
+  if (latestResult.hasFailures || latestResult.hasErrors) {
+    return "outage";
+  }
+
+  if (latestResult.isDegraded || latestResult.overMaxResponseTime) {
+    return "degraded";
+  }
+
+  return "operational";
+}
+
 function buildIncidentSegments(
   startAt: Date,
   endAt: Date,
@@ -968,6 +1048,22 @@ function resolveOverallStatus(services: ServiceStatusCard[]): SystemStatus {
   return "operational";
 }
 
+function resolveOverallLiveStatus(services: LiveServiceStatusSnapshot[]): SystemStatus {
+  if (services.some((service) => service.status === "outage")) {
+    return "outage";
+  }
+
+  if (services.some((service) => service.status === "degraded")) {
+    return "degraded";
+  }
+
+  if (services.some((service) => service.status === "maintenance")) {
+    return "maintenance";
+  }
+
+  return "operational";
+}
+
 function resolveRangeLabel(
   _checks: ChecklyCheck[],
   _incidents: IncidentSummary[],
@@ -998,6 +1094,69 @@ function buildFallbackStatusPageData(error: unknown, today = getFallbackReferenc
     services: [],
     incidents: [],
     loadError,
+  };
+}
+
+function buildFallbackLiveStatusData(error: unknown): LiveStatusPageData {
+  const loadError = buildLoadError(error);
+
+  if (lastSuccessfulLiveStatusData) {
+    return {
+      ...lastSuccessfulLiveStatusData,
+      loadError,
+    };
+  }
+
+  return {
+    generatedAt: getFallbackReferenceDate().toISOString(),
+    systemStatus: "maintenance",
+    services: [],
+    loadError,
+  };
+}
+
+async function loadLiveStatusData(): Promise<LiveStatusPageData> {
+  const now = Date.now();
+
+  if (
+    lastSuccessfulLiveStatusData &&
+    now - lastLiveStatusResolvedAt < LIVE_STATUS_MEMORY_TTL_MS
+  ) {
+    return lastSuccessfulLiveStatusData;
+  }
+
+  const checks = await fetchChecks();
+  const statuses = await fetchCheckStatusesFresh();
+  const statusesByCheckId = new Map(statuses.map((status) => [status.checkId, status]));
+  const servicesWithoutLiveStatus = checks.filter((check) => !statusesByCheckId.has(check.id));
+  const latestResultsByCheckId = new Map<string, ChecklyResult | undefined>();
+
+  if (servicesWithoutLiveStatus.length > 0) {
+    const latestResults = await Promise.all(
+      servicesWithoutLiveStatus.map(async (check) => {
+        const results = await fetchRecentCheckResultsFresh(check.id);
+
+        return [check.id, results[0]] as const;
+      }),
+    );
+
+    for (const [checkId, latestResult] of latestResults) {
+      latestResultsByCheckId.set(checkId, latestResult);
+    }
+  }
+
+  const services = checks.map((check) => ({
+    id: check.id,
+    status: resolveLiveServiceStatus(
+      statusesByCheckId.get(check.id),
+      latestResultsByCheckId.get(check.id),
+    ),
+  }));
+
+  return {
+    generatedAt: new Date(now).toISOString(),
+    systemStatus: resolveOverallLiveStatus(services),
+    services,
   };
 }
 
@@ -1094,4 +1253,34 @@ export async function getStatusPageDataSafe(): Promise<StatusPageData> {
   })();
 
   return inflightStatusPageDataPromise;
+}
+
+export async function getLiveStatusPageDataSafe(): Promise<LiveStatusPageData> {
+  const missingEnvironmentVariableError = getMissingEnvironmentVariableError();
+
+  if (missingEnvironmentVariableError) {
+    return buildFallbackLiveStatusData(missingEnvironmentVariableError);
+  }
+
+  if (inflightLiveStatusDataPromise) {
+    return inflightLiveStatusDataPromise;
+  }
+
+  inflightLiveStatusDataPromise = (async () => {
+    try {
+      const data = await loadLiveStatusData();
+      lastSuccessfulLiveStatusData = data;
+      lastLiveStatusResolvedAt = Date.now();
+
+      return data;
+    } catch (error) {
+      console.error("Failed to load live status data:", error);
+
+      return buildFallbackLiveStatusData(error);
+    } finally {
+      inflightLiveStatusDataPromise = null;
+    }
+  })();
+
+  return inflightLiveStatusDataPromise;
 }

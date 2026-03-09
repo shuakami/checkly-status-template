@@ -68,6 +68,18 @@ export interface StatusPageLoadError {
   body: string;
 }
 
+export interface LiveServiceStatusSnapshot {
+  id: string;
+  status: SystemStatus;
+}
+
+export interface LiveStatusPageData {
+  generatedAt: string;
+  systemStatus: SystemStatus;
+  services: LiveServiceStatusSnapshot[];
+  loadError?: StatusPageLoadError;
+}
+
 export interface StatusPageData {
   generatedAt: string;
   systemStatus: SystemStatus;
