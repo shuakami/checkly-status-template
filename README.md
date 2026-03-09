@@ -9,6 +9,7 @@ A production-ready Next.js status page template for teams that already use Check
 - Includes a public status page, RSS feed, JSON API route, and dynamic favicon badge
 - Keeps outage history opinionated but configurable so short-lived noise does not overwhelm the page
 - Centralizes branding, thresholds, time zone settings, and link-visibility rules in one typed config file
+- Falls back to a friendly maintenance notice when Checkly env vars are missing or the upstream API is temporarily unavailable
 
 ## Quick Start
 

@@ -62,10 +62,17 @@ export interface IncidentSummary {
   endAt: string;
 }
 
+export interface StatusPageLoadError {
+  code: "configuration" | "upstream";
+  title: string;
+  body: string;
+}
+
 export interface StatusPageData {
   generatedAt: string;
   systemStatus: SystemStatus;
   rangeLabel: string;
   services: ServiceStatusCard[];
   incidents: IncidentSummary[];
+  loadError?: StatusPageLoadError;
 }

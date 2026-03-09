@@ -6,6 +6,7 @@ import type {
   IncidentTimelineItem,
   ServiceStatusCard,
   StatusPageData,
+  StatusPageLoadError,
   SystemStatus,
   UptimeDay,
 } from "@/lib/status-page-types";
@@ -114,6 +115,26 @@ interface DailyIncidentAggregate {
   totalOutageMs: number;
   totalDegradedMs: number;
   primaryIncidentId?: string;
+}
+
+function isMissingEnvironmentVariableError(error: unknown) {
+  return error instanceof Error && error.message.startsWith("Missing environment variable:");
+}
+
+function buildLoadError(error: unknown): StatusPageLoadError {
+  if (isMissingEnvironmentVariableError(error)) {
+    return {
+      code: "configuration",
+      title: "Status data unavailable",
+      body: "Live monitoring has not been configured for this deployment yet. Please check back soon.",
+    };
+  }
+
+  return {
+    code: "upstream",
+    title: "Status data temporarily unavailable",
+    body: "We could not load the latest monitoring data right now. Please try again shortly.",
+  };
 }
 
 function resolveDisplayTitle(service: ServiceBlueprint) {
@@ -945,6 +966,19 @@ function resolveRangeLabel(
   return formatHistoryRange(windowStart, today);
 }
 
+function buildFallbackStatusPageData(error: unknown, today = new Date()): StatusPageData {
+  const loadError = buildLoadError(error);
+
+  return {
+    generatedAt: today.toISOString(),
+    systemStatus: "maintenance",
+    rangeLabel: resolveRangeLabel([], [], today),
+    services: [],
+    incidents: [],
+    loadError,
+  };
+}
+
 export async function getStatusPageData(): Promise<StatusPageData> {
   "use cache";
 
@@ -1005,4 +1039,14 @@ export async function getStatusPageData(): Promise<StatusPageData> {
     services,
     incidents,
   };
+}
+
+export async function getStatusPageDataSafe(): Promise<StatusPageData> {
+  try {
+    return await getStatusPageData();
+  } catch (error) {
+    console.error("Failed to load status page data:", error);
+
+    return buildFallbackStatusPageData(error);
+  }
 }

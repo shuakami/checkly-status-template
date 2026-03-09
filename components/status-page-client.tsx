@@ -18,6 +18,7 @@ import type {
   IncidentSegment,
   IncidentSummary,
   IncidentTimelineItem,
+  StatusPageLoadError,
   ServiceStatusCard,
   StatusPageData,
   SystemStatus,
@@ -91,6 +92,22 @@ function getToneClass(tone: IncidentSegment["tone"] | IncidentTimelineItem["tone
   return "bg-[var(--status-op-icon)]";
 }
 
+function getStatusToneClass(status: SystemStatus) {
+  if (status === "outage") {
+    return "bg-[var(--status-down-bg)]";
+  }
+
+  if (status === "degraded") {
+    return "bg-[var(--status-deg-bg)]";
+  }
+
+  if (status === "maintenance") {
+    return "bg-[var(--status-maint-bg)]";
+  }
+
+  return "bg-[var(--status-op-bg)]";
+}
+
 function getStatusCardClass(status: SystemStatus) {
   if (status === "outage") {
     return "border-[1.5px] border-[var(--status-down-icon)]";
@@ -123,35 +140,48 @@ function renderStatusIcon(status: SystemStatus) {
   return <StatusIcon />;
 }
 
-function getHeadline(status: SystemStatus) {
-  if (status === "outage") {
+function getHeadline(data: StatusPageData) {
+  if (data.loadError) {
+    return {
+      title: data.loadError.title,
+      body: data.loadError.body,
+      toneClass: getStatusToneClass("maintenance"),
+      status: "maintenance" as const,
+    };
+  }
+
+  if (data.systemStatus === "outage") {
     return {
       title: siteConfig.copy.headlines.outage.title,
       body: siteConfig.copy.headlines.outage.body,
-      toneClass: "bg-[var(--status-down-bg)]",
+      toneClass: getStatusToneClass("outage"),
+      status: "outage" as const,
     };
   }
 
-  if (status === "degraded") {
+  if (data.systemStatus === "degraded") {
     return {
       title: siteConfig.copy.headlines.degraded.title,
       body: siteConfig.copy.headlines.degraded.body,
-      toneClass: "bg-[var(--status-deg-bg)]",
+      toneClass: getStatusToneClass("degraded"),
+      status: "degraded" as const,
     };
   }
 
-  if (status === "maintenance") {
+  if (data.systemStatus === "maintenance") {
     return {
       title: siteConfig.copy.headlines.maintenance.title,
       body: siteConfig.copy.headlines.maintenance.body,
-      toneClass: "bg-[var(--status-maint-bg)]",
+      toneClass: getStatusToneClass("maintenance"),
+      status: "maintenance" as const,
     };
   }
 
   return {
     title: siteConfig.copy.headlines.operational.title,
     body: siteConfig.copy.headlines.operational.body,
-    toneClass: "bg-[var(--status-op-bg)]",
+    toneClass: getStatusToneClass("operational"),
+    status: "operational" as const,
   };
 }
 
@@ -274,6 +304,34 @@ function getHistoryHoverClass(severity: IncidentSummary["severity"]) {
   return severity === "outage"
     ? "group-hover:text-[var(--status-down-icon)]"
     : "group-hover:text-[var(--status-deg-icon)]";
+}
+
+function NoticeCard({
+  title,
+  body,
+  status,
+}: {
+  title: string;
+  body: string;
+  status: SystemStatus;
+}) {
+  return (
+    <div
+      className={`rounded-lg ${getStatusCardClass(status)} overflow-hidden shadow-[var(--card-shadow)]`}
+    >
+      <div
+        className={`px-4 py-3 flex items-center gap-2 text-[var(--text-primary)] font-medium text-sm ${getStatusToneClass(
+          status,
+        )}`}
+      >
+        {renderStatusIcon(status)}
+        {title}
+      </div>
+      <div className="px-4 py-3 bg-[var(--bg-card)] text-sm text-[var(--text-primary)] leading-relaxed">
+        {body}
+      </div>
+    </div>
+  );
 }
 
 function groupIncidents(incidents: IncidentSummary[]) {
@@ -656,6 +714,7 @@ function IncidentPage({
 
 function HistoryPage({
   incidents,
+  loadError,
   onBack,
   onSelectIncident,
   rangeLabel,
@@ -665,6 +724,7 @@ function HistoryPage({
   onNextRange,
 }: {
   incidents: IncidentSummary[];
+  loadError?: StatusPageLoadError;
   onBack: () => void;
   onSelectIncident: (incidentId: string) => void;
   rangeLabel: string;
@@ -707,15 +767,19 @@ function HistoryPage({
         </div>
 
         {groupedIncidents.length === 0 ? (
-          <div className="rounded-lg border-[1.5px] border-[var(--status-op-icon)] overflow-hidden shadow-[var(--card-shadow)]">
-            <div className="px-4 py-3 bg-[var(--status-op-bg)] flex items-center gap-2 text-[var(--text-primary)] font-medium text-sm">
-              <StatusIcon />
-              We&apos;re fully operational
-            </div>
-            <div className="px-4 py-3 bg-[var(--bg-card)] text-sm text-[var(--text-primary)]">
-              We&apos;re not aware of any issues affecting our systems.
-            </div>
-          </div>
+          loadError ? (
+            <NoticeCard
+              title={loadError.title}
+              body={loadError.body}
+              status="maintenance"
+            />
+          ) : (
+            <NoticeCard
+              title="We're fully operational"
+              body="We're not aware of any issues affecting our systems."
+              status="operational"
+            />
+          )
         ) : (
           <div className="flex flex-col gap-8">
             {groupedIncidents.map((monthGroup) => (
@@ -795,7 +859,7 @@ export function StatusPageClient({ initialData }: { initialData: StatusPageData 
   const [expandedServices, setExpandedServices] = useState<Record<string, boolean>>({});
   const selectedIncident =
     initialData.incidents.find((incident) => incident.id === selectedIncidentId) ?? null;
-  const headline = getHeadline(initialData.systemStatus);
+  const headline = getHeadline(initialData);
   const canGoPreviousRange = selectedRangeIndex > 0;
   const canGoNextRange = selectedRangeIndex < rangeOptions.length - 1;
 
@@ -879,9 +943,9 @@ export function StatusPageClient({ initialData }: { initialData: StatusPageData 
               transition={{ duration: 0.2, ease: "easeOut" }}
               className="flex flex-col gap-6"
             >
-              <div className={`rounded-lg ${getStatusCardClass(initialData.systemStatus)} overflow-hidden shadow-[var(--card-shadow)]`}>
+              <div className={`rounded-lg ${getStatusCardClass(headline.status)} overflow-hidden shadow-[var(--card-shadow)]`}>
                 <div className={`px-4 py-3 flex items-center gap-2 text-[var(--text-primary)] font-medium text-sm ${headline.toneClass}`}>
-                  {renderStatusIcon(initialData.systemStatus)}
+                  {renderStatusIcon(headline.status)}
                   {headline.title}
                 </div>
                 <div className="px-4 py-3 bg-[var(--bg-card)] text-sm text-[var(--text-primary)] leading-relaxed">
@@ -903,73 +967,79 @@ export function StatusPageClient({ initialData }: { initialData: StatusPageData 
                   </div>
                 </div>
 
-                <div className="divide-y divide-[var(--border-strong)]">
-                  {initialData.services.map((service: ServiceStatusCard) => (
-                    <div
-                      key={service.id}
-                      className="p-4 cursor-pointer sm:cursor-default"
-                      onClick={() => toggleService(service.id)}
-                    >
-                      <div className="flex items-center justify-between sm:mb-2">
-                        <div className="flex items-center gap-2">
-                          {renderStatusIcon(service.status)}
-                          <div className="flex items-center gap-1.5 group">
-                            <h3 className="font-medium text-sm text-[var(--text-primary)]">
-                              {service.name}
-                            </h3>
-                            <ChevronDown
-                              className={`sm:hidden w-4 h-4 text-[var(--text-muted)] transition-transform ${
-                                expandedServices[service.id] ? "rotate-180" : ""
-                              }`}
-                            />
-                            {shouldShowExternalLink(service) ? (
-                              <a
-                                href={service.externalUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="hidden sm:block opacity-0 group-hover:opacity-100 transition-opacity text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                                onClick={(event) => event.stopPropagation()}
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                              </a>
-                            ) : null}
+                {initialData.services.length === 0 ? (
+                  <div className="px-4 py-6 text-sm text-[var(--text-secondary)]">
+                    {initialData.loadError?.body ?? "No monitoring data is available right now."}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-[var(--border-strong)]">
+                    {initialData.services.map((service: ServiceStatusCard) => (
+                      <div
+                        key={service.id}
+                        className="p-4 cursor-pointer sm:cursor-default"
+                        onClick={() => toggleService(service.id)}
+                      >
+                        <div className="flex items-center justify-between sm:mb-2">
+                          <div className="flex items-center gap-2">
+                            {renderStatusIcon(service.status)}
+                            <div className="flex items-center gap-1.5 group">
+                              <h3 className="font-medium text-sm text-[var(--text-primary)]">
+                                {service.name}
+                              </h3>
+                              <ChevronDown
+                                className={`sm:hidden w-4 h-4 text-[var(--text-muted)] transition-transform ${
+                                  expandedServices[service.id] ? "rotate-180" : ""
+                                }`}
+                              />
+                              {shouldShowExternalLink(service) ? (
+                                <a
+                                  href={service.externalUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="hidden sm:block opacity-0 group-hover:opacity-100 transition-opacity text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </a>
+                              ) : null}
+                            </div>
+                          </div>
+                          <div className="hidden sm:block text-xs text-[var(--text-secondary)]">
+                            {service.uptimeLabel}
                           </div>
                         </div>
-                        <div className="hidden sm:block text-xs text-[var(--text-secondary)]">
-                          {service.uptimeLabel}
+                        <div className="hidden sm:block">
+                          <UptimeChart
+                            days={getVisibleRangeDays(service.desktopDays, selectedRange)}
+                            onSelectIncident={handleSelectIncident}
+                          />
                         </div>
-                      </div>
-                      <div className="hidden sm:block">
-                        <UptimeChart
-                          days={getVisibleRangeDays(service.desktopDays, selectedRange)}
-                          onSelectIncident={handleSelectIncident}
-                        />
-                      </div>
-                      <AnimatePresence>
-                        {expandedServices[service.id] && (
-                          <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: "auto", opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            className="sm:hidden overflow-hidden"
-                          >
-                            <div className="pt-4">
-                              <div className="flex justify-between items-center mb-2 text-xs text-[var(--text-secondary)]">
-                                <span>{selectedRange?.startLabel ?? "30 days ago"}</span>
-                                <span>{service.uptimeLabel}</span>
-                                <span>{selectedRange?.endLabel ?? "Today"}</span>
+                        <AnimatePresence>
+                          {expandedServices[service.id] && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="sm:hidden overflow-hidden"
+                            >
+                              <div className="pt-4">
+                                <div className="flex justify-between items-center mb-2 text-xs text-[var(--text-secondary)]">
+                                  <span>{selectedRange?.startLabel ?? "30 days ago"}</span>
+                                  <span>{service.uptimeLabel}</span>
+                                  <span>{selectedRange?.endLabel ?? "Today"}</span>
+                                </div>
+                                <UptimeChart
+                                  days={getVisibleRangeDays(service.desktopDays, selectedRange)}
+                                  onSelectIncident={handleSelectIncident}
+                                />
                               </div>
-                              <UptimeChart
-                                days={getVisibleRangeDays(service.desktopDays, selectedRange)}
-                                onSelectIncident={handleSelectIncident}
-                              />
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  ))}
-                </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-center mt-4">
@@ -988,6 +1058,7 @@ export function StatusPageClient({ initialData }: { initialData: StatusPageData 
             <HistoryPage
               key="history"
               incidents={visibleHistoryIncidents}
+              loadError={initialData.loadError}
               onBack={() => setCurrentPage("home")}
               onSelectIncident={handleSelectIncident}
               rangeLabel={selectedRange?.label ?? initialData.rangeLabel}

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ImageResponse } from "next/og";
 import { connection } from "next/server";
-import { getStatusPageData } from "@/lib/checkly";
+import { getStatusPageDataSafe } from "@/lib/checkly";
 import { siteConfig } from "@/lib/site-config";
 import type { SystemStatus } from "@/lib/status-page-types";
 
@@ -102,15 +102,8 @@ async function getLogoDataUri() {
 
 export default async function Icon() {
   await connection();
-  let status: SystemStatus = "operational";
-
-  try {
-    const data = await getStatusPageData();
-
-    status = data.systemStatus;
-  } catch {
-    status = "operational";
-  }
+  const data = await getStatusPageDataSafe();
+  const status: SystemStatus = data.systemStatus;
 
   const badge = getBadgeConfig(status);
   const logoDataUri = await getLogoDataUri();

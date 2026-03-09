@@ -1,11 +1,11 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { StatusPageClient } from "@/components/status-page-client";
-import { getStatusPageData } from "@/lib/checkly";
+import { getStatusPageDataSafe } from "@/lib/checkly";
 
 async function StatusPageContent() {
   await connection();
-  const initialData = await getStatusPageData();
+  const initialData = await getStatusPageDataSafe();
 
   return <StatusPageClient initialData={initialData} />;
 }
