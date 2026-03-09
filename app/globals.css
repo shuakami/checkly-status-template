@@ -1,0 +1,172 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --color-bg-main: var(--bg-main);
+  --color-bg-card: var(--bg-card);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+
+  --color-chart-empty: var(--chart-empty);
+  --color-chart-empty-hover: var(--chart-empty-hover);
+  --color-chart-tooltip-bg: var(--chart-tooltip-bg);
+  --color-chart-tooltip-border: var(--chart-tooltip-border);
+
+  --color-status-op-icon: var(--status-op-icon);
+  --color-status-op-bg: var(--status-op-bg);
+  --color-status-op-text: var(--status-op-text);
+
+  --color-status-down-icon: var(--status-down-icon);
+  --color-status-down-bg: var(--status-down-bg);
+  --color-status-down-text: var(--status-down-text);
+
+  --color-status-deg-icon: var(--status-deg-icon);
+  --color-status-deg-bg: var(--status-deg-bg);
+  --color-status-deg-text: var(--status-deg-text);
+
+  --color-status-maint-icon: var(--status-maint-icon);
+  --color-status-maint-bg: var(--status-maint-bg);
+  --color-status-maint-text: var(--status-maint-text);
+
+  --color-btn-bg: var(--btn-bg);
+  --color-btn-border: var(--btn-border);
+  --color-btn-text: var(--btn-text);
+  --color-btn-hover: var(--btn-hover);
+}
+
+:root {
+  --bg-main: #faf9f6;
+  --bg-card: #ffffff;
+  --text-primary: #1a1a1a;
+  --text-secondary: #71717a;
+  --text-muted: #a1a1aa;
+  --border-subtle: #f4f4f5;
+  --border-strong: #e4e4e7;
+
+  --chart-empty: #f4f4f5;
+  --chart-empty-hover: #e4e4e7;
+  --chart-tooltip-bg: #ffffff;
+  --chart-tooltip-border: #e4e4e7;
+
+  --status-op-icon: #1fa382;
+  --status-op-bg: #e6f6f1;
+  --status-op-text: #1fa382;
+
+  --status-down-icon: #ef4444;
+  --status-down-bg: #fee2e2;
+  --status-down-text: #ef4444;
+
+  --status-deg-icon: #f59e0b;
+  --status-deg-bg: #fef3c7;
+  --status-deg-text: #f59e0b;
+
+  --status-maint-icon: #3b82f6;
+  --status-maint-bg: #dbeafe;
+  --status-maint-text: #3b82f6;
+
+  --btn-bg: transparent;
+  --btn-border: #e4e4e7;
+  --btn-text: #1a1a1a;
+  --btn-hover: #f4f4f5;
+
+  --card-shadow: 0 2px 12px rgba(0, 0, 0, 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-main: #16161c;
+    --bg-card: #16161c;
+    --text-primary: #ffffff;
+    --text-secondary: #a1a1aa;
+    --text-muted: #525252;
+    --border-subtle: #29292f;
+    --border-strong: #39393f;
+
+    --chart-empty: #29292f;
+    --chart-empty-hover: #4a4a52;
+    --chart-tooltip-bg: #39393f;
+    --chart-tooltip-border: #39393f;
+
+    --status-op-icon: #1fa382;
+    --status-op-bg: #0a2920;
+    --status-op-text: #2ee5b6;
+
+    --status-down-icon: #ef4444;
+    --status-down-bg: #3f1616;
+    --status-down-text: #ef4444;
+
+    --status-deg-icon: #f59e0b;
+    --status-deg-bg: #3f2c0a;
+    --status-deg-text: #f59e0b;
+
+    --status-maint-icon: #3b82f6;
+    --status-maint-bg: #0f2942;
+    --status-maint-text: #3b82f6;
+
+    --btn-bg: transparent;
+    --btn-border: #39393f;
+    --btn-text: #ffffff;
+    --btn-hover: #29292f;
+
+    --card-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+  }
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+body::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes slideUpAndFade {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes slideDownAndFade {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.96);
+  }
+}
+
+.TooltipContent {
+  transform-origin: var(--radix-tooltip-content-transform-origin);
+  animation-duration: 150ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
+}
+
+.TooltipContent[data-state="delayed-open"],
+.TooltipContent[data-state="instant-open"] {
+  animation-name: slideUpAndFade;
+}
+
+.TooltipContent[data-state="closed"] {
+  animation-name: slideDownAndFade;
+}
