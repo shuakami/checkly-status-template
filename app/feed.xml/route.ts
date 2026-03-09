@@ -1,4 +1,3 @@
-import { connection } from "next/server";
 import { getStatusPageDataSafe } from "@/lib/checkly";
 import { siteConfig } from "@/lib/site-config";
 import { shouldShowIncidentInHistory } from "@/lib/status-page-rules";
@@ -49,7 +48,6 @@ function resolveOrigin(request: Request) {
 }
 
 export async function GET(request: Request) {
-  await connection();
   const data = await getStatusPageDataSafe();
   const origin = resolveOrigin(request);
   const homeUrl = `${origin}/`;
@@ -104,7 +102,7 @@ export async function GET(request: Request) {
     status: data.loadError ? 503 : 200,
     headers: {
       "Content-Type": "application/rss+xml; charset=utf-8",
-      "Cache-Control": `public, s-maxage=${siteConfig.monitoring.cache.staleSeconds}, stale-while-revalidate=${siteConfig.monitoring.cache.expireSeconds}`,
+      "Cache-Control": `public, s-maxage=${siteConfig.monitoring.cache.staleSeconds}, stale-while-revalidate=${siteConfig.monitoring.cache.expireSeconds}, stale-if-error=86400`,
     },
   });
 }

@@ -25,10 +25,12 @@ const MAX_CHECKS_PAGES = 20;
 const CHECK_RESULTS_PAGE_LIMIT = 100;
 const MAX_OUTAGE_HISTORY_PAGES = 50;
 const MAX_RETRY_ATTEMPTS = 4;
+const CHECKLY_REQUEST_TIMEOUT_MS = 8_000;
 const DISPLAY_LOCALE = siteConfig.locale;
 const DISPLAY_TIME_ZONE = siteConfig.monitoring.timeZone;
 const DISPLAY_TIME_ZONE_LABEL = siteConfig.monitoring.timeZoneLabel;
 const DISPLAY_TIME_ZONE_OFFSET_MS = siteConfig.monitoring.timeZoneOffsetMinutes * 60 * 1000;
+const FALLBACK_REFERENCE_DATE = new Date("2026-01-01T00:00:00.000Z");
 
 const RESOLVED_SUMMARY = "All impacted services have now fully recovered.";
 const ZONED_DATE_TIME_FORMATTER = new Intl.DateTimeFormat(DISPLAY_LOCALE, {
@@ -117,8 +119,23 @@ interface DailyIncidentAggregate {
   primaryIncidentId?: string;
 }
 
+let lastSuccessfulStatusPageData: StatusPageData | null = null;
+let inflightStatusPageDataPromise: Promise<StatusPageData> | null = null;
+
 function isMissingEnvironmentVariableError(error: unknown) {
   return error instanceof Error && error.message.startsWith("Missing environment variable:");
+}
+
+function getMissingEnvironmentVariableError() {
+  if (!process.env.CHECKLY_API_KEY) {
+    return new Error("Missing environment variable: CHECKLY_API_KEY");
+  }
+
+  if (!process.env.CHECKLY_ACCOUNT_ID) {
+    return new Error("Missing environment variable: CHECKLY_ACCOUNT_ID");
+  }
+
+  return null;
 }
 
 function buildLoadError(error: unknown): StatusPageLoadError {
@@ -216,7 +233,9 @@ async function fetchChecklyJson<T>(
     }
 
     const response = await fetch(url, {
+      cache: "force-cache",
       headers: buildHeaders(),
+      signal: AbortSignal.timeout(CHECKLY_REQUEST_TIMEOUT_MS),
       next: {
         revalidate: siteConfig.monitoring.cache.revalidateSeconds,
         tags: [CHECKLY_CACHE_TAG],
@@ -966,7 +985,15 @@ function resolveRangeLabel(
   return formatHistoryRange(windowStart, today);
 }
 
-function buildFallbackStatusPageData(error: unknown, today = new Date()): StatusPageData {
+function getFallbackReferenceDate() {
+  if (lastSuccessfulStatusPageData) {
+    return new Date(lastSuccessfulStatusPageData.generatedAt);
+  }
+
+  return FALLBACK_REFERENCE_DATE;
+}
+
+function buildFallbackStatusPageData(error: unknown, today = getFallbackReferenceDate()): StatusPageData {
   const loadError = buildLoadError(error);
 
   return {
@@ -1042,11 +1069,34 @@ export async function getStatusPageData(): Promise<StatusPageData> {
 }
 
 export async function getStatusPageDataSafe(): Promise<StatusPageData> {
-  try {
-    return await getStatusPageData();
-  } catch (error) {
-    console.error("Failed to load status page data:", error);
+  const missingEnvironmentVariableError = getMissingEnvironmentVariableError();
 
-    return buildFallbackStatusPageData(error);
+  if (missingEnvironmentVariableError) {
+    return buildFallbackStatusPageData(missingEnvironmentVariableError);
   }
+
+  if (inflightStatusPageDataPromise) {
+    return inflightStatusPageDataPromise;
+  }
+
+  inflightStatusPageDataPromise = (async () => {
+    try {
+      const data = await getStatusPageData();
+      lastSuccessfulStatusPageData = data;
+
+      return data;
+    } catch (error) {
+      console.error("Failed to load status page data:", error);
+
+      if (lastSuccessfulStatusPageData) {
+        return lastSuccessfulStatusPageData;
+      }
+
+      return buildFallbackStatusPageData(error);
+    } finally {
+      inflightStatusPageDataPromise = null;
+    }
+  })();
+
+  return inflightStatusPageDataPromise;
 }
