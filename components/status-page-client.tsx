@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { startTransition, useEffect, useEffectEvent, useState } from "react";
 import {
   Calendar,
   ChevronDown,
@@ -48,6 +48,8 @@ type RangeOption = {
   startMonthKey: string;
   endMonthKey: string;
 };
+
+const AUTO_REFRESH_INTERVAL_MS = siteConfig.monitoring.clientRefreshSeconds * 1000;
 
 const StatusIcon = ({
   className = "w-[18px] h-[18px] text-[var(--status-op-icon)] fill-current",
@@ -255,6 +257,16 @@ function buildRangeOptions(services: ServiceStatusCard[]) {
 
     return [createRangeOption(startMonthKey, endMonthKey)];
   });
+}
+
+function isSameStatusSnapshot(currentData: StatusPageData, nextData: StatusPageData) {
+  return (
+    currentData.generatedAt === nextData.generatedAt &&
+    currentData.systemStatus === nextData.systemStatus &&
+    currentData.services.length === nextData.services.length &&
+    currentData.incidents.length === nextData.incidents.length &&
+    currentData.loadError?.code === nextData.loadError?.code
+  );
 }
 
 function getTooltipLayoutKey(day: UptimeDay) {
@@ -843,8 +855,9 @@ function HistoryPage({
 }
 
 export function StatusPageClient({ initialData }: { initialData: StatusPageData }) {
-  const rangeOptions = buildRangeOptions(initialData.services);
-  const historyIncidents = initialData.incidents.filter(shouldShowIncidentInHistory);
+  const [data, setData] = useState(initialData);
+  const rangeOptions = buildRangeOptions(data.services);
+  const historyIncidents = data.incidents.filter(shouldShowIncidentInHistory);
   const [currentPage, setCurrentPage] = useState<"home" | "history" | "incident">("home");
   const [selectedRangeIndex, setSelectedRangeIndex] = useState(
     Math.max(rangeOptions.length - 1, 0),
@@ -854,14 +867,100 @@ export function StatusPageClient({ initialData }: { initialData: StatusPageData 
     ? historyIncidents.filter((incident) => isDateInRangeOption(incident.dateKey, selectedRange))
     : historyIncidents;
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(
-    historyIncidents[0]?.id ?? initialData.incidents[0]?.id ?? null,
+    historyIncidents[0]?.id ?? data.incidents[0]?.id ?? null,
   );
   const [expandedServices, setExpandedServices] = useState<Record<string, boolean>>({});
   const selectedIncident =
-    initialData.incidents.find((incident) => incident.id === selectedIncidentId) ?? null;
-  const headline = getHeadline(initialData);
+    data.incidents.find((incident) => incident.id === selectedIncidentId) ?? null;
+  const headline = getHeadline(data);
   const canGoPreviousRange = selectedRangeIndex > 0;
   const canGoNextRange = selectedRangeIndex < rangeOptions.length - 1;
+
+  const refreshStatusPageData = useEffectEvent(async () => {
+    try {
+      const response = await fetch("/api/status", {
+        cache: "no-store",
+        headers: {
+          Accept: "application/json",
+        },
+      });
+      const nextData = (await response.json()) as StatusPageData;
+
+      startTransition(() => {
+        setData((currentData) =>
+          isSameStatusSnapshot(currentData, nextData) ? currentData : nextData,
+        );
+      });
+    } catch {
+      // Keep the current snapshot when a background refresh fails.
+    }
+  });
+
+  useEffect(() => {
+    let isRefreshInFlight = false;
+
+    const refreshIfVisible = async () => {
+      if (document.visibilityState === "hidden" || isRefreshInFlight) {
+        return;
+      }
+
+      isRefreshInFlight = true;
+
+      try {
+        await refreshStatusPageData();
+      } finally {
+        isRefreshInFlight = false;
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void refreshIfVisible();
+    }, AUTO_REFRESH_INTERVAL_MS);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshIfVisible();
+      }
+    };
+
+    const handleOnline = () => {
+      void refreshIfVisible();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("online", handleOnline);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [refreshStatusPageData]);
+
+  useEffect(() => {
+    if (selectedRangeIndex < rangeOptions.length) {
+      return;
+    }
+
+    setSelectedRangeIndex(Math.max(rangeOptions.length - 1, 0));
+  }, [rangeOptions.length, selectedRangeIndex]);
+
+  useEffect(() => {
+    if (
+      selectedIncidentId &&
+      data.incidents.some((incident) => incident.id === selectedIncidentId)
+    ) {
+      return;
+    }
+
+    const nextIncidentId = historyIncidents[0]?.id ?? data.incidents[0]?.id ?? null;
+
+    setSelectedIncidentId(nextIncidentId);
+
+    if (currentPage === "incident") {
+      setCurrentPage("history");
+    }
+  }, [currentPage, data.incidents, historyIncidents, selectedIncidentId]);
 
   const toggleService = (serviceId: string) => {
     if (window.innerWidth < 640) {
@@ -958,7 +1057,7 @@ export function StatusPageClient({ initialData }: { initialData: StatusPageData 
                   <h2 className="font-medium text-[var(--text-primary)] text-base">System status</h2>
                   <div>
                     <RangeSelector
-                      label={selectedRange?.label ?? initialData.rangeLabel}
+                      label={selectedRange?.label ?? data.rangeLabel}
                       canGoPrevious={canGoPreviousRange}
                       canGoNext={canGoNextRange}
                       onPrevious={goToPreviousRange}
@@ -967,13 +1066,13 @@ export function StatusPageClient({ initialData }: { initialData: StatusPageData 
                   </div>
                 </div>
 
-                {initialData.services.length === 0 ? (
+                {data.services.length === 0 ? (
                   <div className="px-4 py-6 text-sm text-[var(--text-secondary)]">
-                    {initialData.loadError?.body ?? "No monitoring data is available right now."}
+                    {data.loadError?.body ?? "No monitoring data is available right now."}
                   </div>
                 ) : (
                   <div className="divide-y divide-[var(--border-strong)]">
-                    {initialData.services.map((service: ServiceStatusCard) => (
+                    {data.services.map((service: ServiceStatusCard) => (
                       <div
                         key={service.id}
                         className="p-4 cursor-pointer sm:cursor-default"
@@ -1058,10 +1157,10 @@ export function StatusPageClient({ initialData }: { initialData: StatusPageData 
             <HistoryPage
               key="history"
               incidents={visibleHistoryIncidents}
-              loadError={initialData.loadError}
+              loadError={data.loadError}
               onBack={() => setCurrentPage("home")}
               onSelectIncident={handleSelectIncident}
-              rangeLabel={selectedRange?.label ?? initialData.rangeLabel}
+              rangeLabel={selectedRange?.label ?? data.rangeLabel}
               canGoPreviousRange={canGoPreviousRange}
               canGoNextRange={canGoNextRange}
               onPreviousRange={goToPreviousRange}

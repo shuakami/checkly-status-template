@@ -14,6 +14,7 @@ export const siteConfig = {
     timeZone: "UTC",
     timeZoneLabel: "UTC",
     timeZoneOffsetMinutes: 0,
+    clientRefreshSeconds: 60,
     historyLookbackDays: 90,
     dailyOperationalThresholdMinutes: 30,
     degradedHistoryThresholdMinutes: 30,
